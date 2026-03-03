@@ -49,6 +49,18 @@ function parseOptionalPositiveInt(value: unknown) {
   return numberValue;
 }
 
+function getFirstZodErrorMessage(error: z.ZodError) {
+  return error.errors[0]?.message ?? "Dados invalidos";
+}
+
+function handleRouteError(res: Response, error: unknown, internalMessage = "Erro interno do servidor") {
+  if (error instanceof z.ZodError) {
+    return res.status(400).json({ message: getFirstZodErrorMessage(error) });
+  }
+
+  return res.status(500).json({ message: internalMessage });
+}
+
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   setupAuth(app);
   await seedDatabase();
@@ -75,10 +87,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.json({ message: "Senha alterada com sucesso" });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro interno do servidor" });
+      return handleRouteError(res, error);
     }
   });
 
@@ -125,10 +134,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.json({ message: "Se o usuario existir, enviaremos instrucoes por e-mail." });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro interno do servidor" });
+      return handleRouteError(res, error);
     }
   });
 
@@ -161,10 +167,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.json({ valid: true });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro interno do servidor" });
+      return handleRouteError(res, error);
     }
   });
 
@@ -209,10 +212,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.json({ message: "Senha redefinida com sucesso" });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro interno do servidor" });
+      return handleRouteError(res, error);
     }
   });
 
@@ -242,10 +242,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.json({ message: "Solicitacao cancelada e dispositivo bloqueado" });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro interno do servidor" });
+      return handleRouteError(res, error);
     }
   });
 
@@ -277,10 +274,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const updatedUser = await storage.updateUser(user.id, { avatarUrl: input.avatarUrl });
       return res.json(sanitizeUser(updatedUser));
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro interno do servidor" });
+      return handleRouteError(res, error);
     }
   });
 
@@ -315,11 +309,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         enrollment,
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-
-      return res.status(500).json({ message: "Nao foi possivel matricular o aluno" });
+      return handleRouteError(res, error, "Nao foi possivel matricular o aluno");
     }
   });
 
@@ -352,10 +342,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.status(201).json(course);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro ao criar curso" });
+      return handleRouteError(res, error, "Erro ao criar curso");
     }
   });
 
@@ -370,10 +357,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const course = await storage.updateCourse(courseId, input);
       return res.json(course);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro ao atualizar curso" });
+      return handleRouteError(res, error, "Erro ao atualizar curso");
     }
   });
 
@@ -388,10 +372,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const subject = await storage.createSubject(input);
       return res.status(201).json(subject);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro ao criar materia" });
+      return handleRouteError(res, error, "Erro ao criar materia");
     }
   });
 
@@ -416,10 +397,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.setCourseSubjects(courseId, input.subjectIds);
       return res.json({ message: "Grade curricular atualizada" });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro ao atualizar grade" });
+      return handleRouteError(res, error, "Erro ao atualizar grade");
     }
   });
 
@@ -451,10 +429,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.status(201).json(enrollment);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro ao criar matricula" });
+      return handleRouteError(res, error, "Erro ao criar matricula");
     }
   });
 
@@ -469,10 +444,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const enrollment = await storage.updateEnrollment(enrollmentId, input);
       return res.json(enrollment);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro ao atualizar matricula" });
+      return handleRouteError(res, error, "Erro ao atualizar matricula");
     }
   });
 
@@ -504,21 +476,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       return res.status(201).json(announcement);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message ?? "Dados invalidos" });
-      }
-      return res.status(500).json({ message: "Erro ao criar comunicado" });
+      return handleRouteError(res, error, "Erro ao criar comunicado");
     }
   });
 
   app.get(api.dashboard.get.path, requireAuth, async (req, res) => {
     const user = getAuthUser(req);
-    const allCourses = await storage.getCourses();
-    const allEnrollments = await storage.getEnrollments();
-    const announcements = await storage.getAnnouncementsForUser(user);
 
     if (user.role === "admin") {
-      const activeStudents = (await storage.getUsers("student")).length;
+      const [allCourses, allEnrollments, announcements, students] = await Promise.all([
+        storage.getCourses(),
+        storage.getEnrollments(),
+        storage.getAnnouncementsForUser(user),
+        storage.getUsers("student"),
+      ]);
+
+      const activeStudents = students.length;
       const estimatedRevenue = activeStudents * 850;
       const avgAttendance =
         allEnrollments.length > 0
@@ -539,31 +512,47 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     if (user.role === "teacher") {
-      const teacherCourses = allCourses.filter((course) => course.teacherId === user.id);
-      const teacherEnrollments = allEnrollments.filter((item) =>
-        teacherCourses.some((course) => course.id === item.courseId),
-      );
+      const [allCourses, allEnrollments, announcements] = await Promise.all([
+        storage.getCourses(),
+        storage.getEnrollments(),
+        storage.getAnnouncementsForUser(user),
+      ]);
 
-      const avgGrade =
-        teacherEnrollments.filter((item) => typeof item.grade === "number").length > 0
-          ? Math.round(
-              teacherEnrollments.reduce((sum, item) => sum + (item.grade ?? 0), 0) /
-                teacherEnrollments.filter((item) => typeof item.grade === "number").length,
-            )
-          : 0;
+      const teacherCourses = allCourses.filter((course) => course.teacherId === user.id);
+      const teacherCourseIds = new Set(teacherCourses.map((course) => course.id));
+
+      let gradeSum = 0;
+      let gradeCount = 0;
+      let teacherEnrollmentCount = 0;
+
+      for (const enrollment of allEnrollments) {
+        if (!teacherCourseIds.has(enrollment.courseId)) continue;
+        teacherEnrollmentCount += 1;
+
+        if (typeof enrollment.grade === "number") {
+          gradeSum += enrollment.grade;
+          gradeCount += 1;
+        }
+      }
+
+      const avgGrade = gradeCount > 0 ? Math.round(gradeSum / gradeCount) : 0;
 
       return res.json({
         role: user.role,
         cards: [
           { label: "Aulas no horario", value: String(teacherCourses.length) },
-          { label: "Alunos acompanhados", value: String(teacherEnrollments.length) },
+          { label: "Alunos acompanhados", value: String(teacherEnrollmentCount) },
           { label: "Media de notas", value: `${avgGrade}%` },
           { label: "Comunicados", value: String(announcements.length) },
         ],
       });
     }
 
-    const studentEnrollments = allEnrollments.filter((item) => item.studentId === user.id);
+    const [studentEnrollments, announcements] = await Promise.all([
+      storage.getEnrollments(undefined, user.id),
+      storage.getAnnouncementsForUser(user),
+    ]);
+
     const topGrade = Math.max(...studentEnrollments.map((item) => item.grade ?? 0), 0);
     const avgAttendance =
       studentEnrollments.length > 0

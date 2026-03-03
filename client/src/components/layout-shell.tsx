@@ -3,17 +3,23 @@ import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { motion } from "framer-motion";
 import {
   Bell,
   BookOpen,
-  GraduationCap,
   LayoutDashboard,
   Lock,
   LogOut,
   Upload,
   Users,
 } from "lucide-react";
+
 import { cn } from "@/lib/utils";
+import {
+  evaluatePasswordStrength,
+  getPasswordStrengthClass,
+  getPasswordStrengthLabel,
+} from "@/lib/password-strength";
 import { useAuth } from "@/hooks/use-auth";
 import { useEnrollments } from "@/hooks/use-enrollments";
 import { useUpdateAvatar } from "@/hooks/use-users";
@@ -29,6 +35,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Logo } from "./ui/logo";
 
 interface LayoutShellProps {
   children: ReactNode;
@@ -46,31 +53,35 @@ const passwordSchema = z
   });
 
 type PasswordForm = z.infer<typeof passwordSchema>;
-type PasswordStrength = "FRACA" | "MEDIA" | "SEGURA";
-
-function getPasswordStrength(password: string): PasswordStrength {
-  const hasLower = /[a-z]/.test(password);
-  const hasUpper = /[A-Z]/.test(password);
-  const hasDigit = /\d/.test(password);
-  const hasSpecial = /[^A-Za-z0-9]/.test(password);
-  const kinds = [hasLower, hasUpper, hasDigit, hasSpecial].filter(Boolean).length;
-
-  if (password.length < 8 || kinds <= 1) return "FRACA";
-  if (password.length > 8 && kinds >= 3) return "SEGURA";
-  return "MEDIA";
-}
-
-function strengthClass(value: PasswordStrength) {
-  if (value === "FRACA") return "text-red-600";
-  if (value === "MEDIA") return "text-sky-500";
-  return "text-green-600";
-}
 
 function getRoleLabel(role: string) {
   if (role === "admin") return "Administrador";
   if (role === "teacher") return "Professor";
   return "Aluno";
 }
+
+const staggered = {
+  animate: {
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+};
+
+const fadeInUp = {
+  initial: {
+    y: 10,
+    opacity: 0,
+  },
+  animate: {
+    y: 0,
+    opacity: 1,
+    transition: {
+      duration: 0.5,
+      ease: [0.6, -0.05, 0.01, 0.99],
+    },
+  },
+};
 
 export function LayoutShell({ children }: LayoutShellProps) {
   const { user, logout, changePassword } = useAuth();
@@ -94,7 +105,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
   });
 
   const newPasswordValue = passwordForm.watch("newPassword") || "";
-  const passwordStrength = getPasswordStrength(newPasswordValue);
+  const passwordStrength = evaluatePasswordStrength(newPasswordValue);
 
   if (!user) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50">{children}</div>;
@@ -126,36 +137,49 @@ export function LayoutShell({ children }: LayoutShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 flex flex-col md:flex-row font-body text-foreground">
+    <motion.div
+      initial="initial"
+      animate="animate"
+      variants={staggered}
+      className="min-h-screen bg-gray-50/50 flex flex-col md:flex-row font-body text-foreground"
+    >
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 bg-white p-2 rounded shadow">
         Pular para o conteudo
       </a>
 
-      <aside className="w-full md:w-72 bg-white border-r border-border flex flex-col sticky top-0 md:h-screen z-20">
+      <motion.aside
+        variants={fadeInUp}
+        className="w-full md:w-72 bg-white border-r border-border flex flex-col sticky top-0 md:h-screen z-20"
+      >
         <div className="p-6 border-b border-border/50">
           <Link href="/">
-            <button
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               type="button"
               className="flex items-center gap-3 text-left w-full rounded-lg p-1 transition-colors hover:bg-primary/5 cursor-pointer"
               aria-label="Ir para a pagina inicial"
             >
               <div className="bg-primary/10 p-2 rounded-lg">
-                <GraduationCap className="w-6 h-6 text-primary" />
+                <Logo className="w-6 h-6 text-primary" />
               </div>
               <div>
                 <h1 className="font-display font-bold text-xl tracking-tight leading-none text-primary">Academic Suite</h1>
                 <p className="text-xs text-muted-foreground mt-1 font-medium tracking-wide uppercase">Sistema academico</p>
               </div>
-            </button>
+            </motion.button>
           </Link>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1" aria-label="Menu principal">
+        <motion.nav variants={staggered} className="flex-1 p-4 space-y-1" aria-label="Menu principal">
           {filteredNav.map((item) => {
             const isActive = location === item.href;
             return (
               <Link key={item.href} href={item.href}>
-                <div
+                <motion.div
+                  variants={fadeInUp}
+                  whileHover={{ scale: 1.03, x: 5 }}
+                  whileTap={{ scale: 0.97 }}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 cursor-pointer font-medium text-sm",
                     isActive
@@ -165,16 +189,18 @@ export function LayoutShell({ children }: LayoutShellProps) {
                 >
                   <item.icon className={cn("w-4 h-4", isActive ? "text-primary" : "text-muted-foreground")} />
                   {item.label}
-                </div>
+                </motion.div>
               </Link>
             );
           })}
-        </nav>
+        </motion.nav>
 
         <div className="p-4 border-t border-border/50 space-y-2">
           <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
             <DialogTrigger asChild>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 type="button"
                 className="w-full flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
                 aria-label="Abrir perfil do usuario"
@@ -189,7 +215,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
                   <p className="text-sm font-semibold truncate">{user.name}</p>
                   <p className="text-xs text-muted-foreground">{getRoleLabel(user.role)}</p>
                 </div>
-              </button>
+              </motion.button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -254,7 +280,9 @@ export function LayoutShell({ children }: LayoutShellProps) {
                 <div className="space-y-2">
                   <Label>Nova senha</Label>
                   <Input type="password" {...passwordForm.register("newPassword")} />
-                  <p className={`text-xs font-semibold ${strengthClass(passwordStrength)}`}>Senha + {passwordStrength}</p>
+                  <p className={`text-xs font-semibold ${getPasswordStrengthClass(passwordStrength)}`}>
+                    Senha {getPasswordStrengthLabel(passwordStrength)}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>Confirmar senha</Label>
@@ -281,11 +309,18 @@ export function LayoutShell({ children }: LayoutShellProps) {
             Sair
           </Button>
         </div>
-      </aside>
+      </motion.aside>
 
-      <main id="main-content" className="flex-1 overflow-auto" tabIndex={-1}>
-        <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 animate-in fade-in duration-500">{children}</div>
-      </main>
-    </div>
+      <motion.main
+        id="main-content"
+        className="flex-1 overflow-auto"
+        tabIndex={-1}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8">{children}</div>
+      </motion.main>
+    </motion.div>
   );
 }

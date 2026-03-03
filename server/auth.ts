@@ -12,7 +12,10 @@ const scryptAsync = promisify(scrypt);
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_ATTEMPT_CLEANUP_MS = 5 * 60 * 1000;
+const MAX_LOGIN_KEYS = 10_000;
 const loginAttempts = new Map<string, { count: number; firstAttemptAt: number }>();
+let lastCleanupAt = 0;
 
 function sanitizeUser(user: User) {
   const { password, ...userWithoutPassword } = user;
@@ -27,11 +30,39 @@ function buildAttemptKey(ip: string, identifier: string) {
   return `${ip}:${normalizeIdentifier(identifier)}`;
 }
 
+function cleanupLoginAttempts(now: number) {
+  const shouldCleanupByTime = now - lastCleanupAt >= LOGIN_ATTEMPT_CLEANUP_MS;
+  const shouldCleanupBySize = loginAttempts.size > MAX_LOGIN_KEYS;
+
+  if (!shouldCleanupByTime && !shouldCleanupBySize) return;
+
+  loginAttempts.forEach((data, key) => {
+    if (now - data.firstAttemptAt > LOGIN_WINDOW_MS) {
+      loginAttempts.delete(key);
+    }
+  });
+
+  if (loginAttempts.size > MAX_LOGIN_KEYS) {
+    const entries = Array.from(loginAttempts.entries()).sort(
+      (a, b) => a[1].firstAttemptAt - b[1].firstAttemptAt,
+    );
+    const overflow = loginAttempts.size - MAX_LOGIN_KEYS;
+    for (let i = 0; i < overflow; i += 1) {
+      loginAttempts.delete(entries[i][0]);
+    }
+  }
+
+  lastCleanupAt = now;
+}
+
 function isBlockedByRateLimit(key: string) {
+  const now = Date.now();
+  cleanupLoginAttempts(now);
+
   const data = loginAttempts.get(key);
   if (!data) return false;
 
-  const age = Date.now() - data.firstAttemptAt;
+  const age = now - data.firstAttemptAt;
   if (age > LOGIN_WINDOW_MS) {
     loginAttempts.delete(key);
     return false;
@@ -41,16 +72,19 @@ function isBlockedByRateLimit(key: string) {
 }
 
 function registerFailedLogin(key: string) {
+  const now = Date.now();
+  cleanupLoginAttempts(now);
+
   const current = loginAttempts.get(key);
 
   if (!current) {
-    loginAttempts.set(key, { count: 1, firstAttemptAt: Date.now() });
+    loginAttempts.set(key, { count: 1, firstAttemptAt: now });
     return;
   }
 
-  const age = Date.now() - current.firstAttemptAt;
+  const age = now - current.firstAttemptAt;
   if (age > LOGIN_WINDOW_MS) {
-    loginAttempts.set(key, { count: 1, firstAttemptAt: Date.now() });
+    loginAttempts.set(key, { count: 1, firstAttemptAt: now });
     return;
   }
 
@@ -79,7 +113,13 @@ export async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  const sessionSecret = process.env.SESSION_SECRET || randomBytes(32).toString("hex");
+  const configuredSessionSecret = process.env.SESSION_SECRET;
+
+  if (app.get("env") === "production" && !configuredSessionSecret) {
+    throw new Error("SESSION_SECRET must be configured in production");
+  }
+
+  const sessionSecret = configuredSessionSecret || randomBytes(32).toString("hex");
 
   const sessionSettings: session.SessionOptions = {
     secret: sessionSecret,

@@ -52,9 +52,13 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Erro interno do servidor";
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    const errorWithMetadata = err as { status?: number; statusCode?: number; message?: string };
+    const status = errorWithMetadata.status ?? errorWithMetadata.statusCode ?? 500;
+    const message =
+      typeof errorWithMetadata.message === "string"
+        ? errorWithMetadata.message
+        : "Erro interno do servidor";
 
     console.error("Erro interno do servidor:", err);
 

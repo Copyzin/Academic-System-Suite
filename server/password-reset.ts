@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, randomInt } from "crypto";
 
 export function normalizeCpf(value: string) {
   return value.replace(/\D/g, "");
@@ -9,7 +9,7 @@ export function hashValue(value: string) {
 }
 
 export function generateFiveDigitToken() {
-  return String(Math.floor(10000 + Math.random() * 90000));
+  return String(randomInt(10000, 100000));
 }
 
 export function generateCancelToken() {
@@ -30,7 +30,7 @@ export function evaluatePasswordStrength(password: string): PasswordStrength {
     return "fraca";
   }
 
-  if (password.length >= 8 && kinds >= 3) {
+  if (password.length > 8 && kinds >= 3) {
     return "segura";
   }
 

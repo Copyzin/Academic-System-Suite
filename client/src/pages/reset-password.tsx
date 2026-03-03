@@ -10,6 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Lock, Loader2 } from "lucide-react";
 import { usePasswordRecovery } from "@/hooks/use-password-recovery";
 import { getDeviceId } from "@/lib/device-id";
+import {
+  evaluatePasswordStrength,
+  getPasswordStrengthClass,
+  getPasswordStrengthLabel,
+} from "@/lib/password-strength";
 
 const schema = z
   .object({
@@ -24,27 +29,6 @@ const schema = z
   });
 
 type FormData = z.infer<typeof schema>;
-
-type PasswordStrength = "FRACA" | "MEDIA" | "SEGURA";
-
-function getPasswordStrength(password: string): PasswordStrength {
-  const hasLower = /[a-z]/.test(password);
-  const hasUpper = /[A-Z]/.test(password);
-  const hasDigit = /\d/.test(password);
-  const hasSpecial = /[^A-Za-z0-9]/.test(password);
-
-  const kinds = [hasLower, hasUpper, hasDigit, hasSpecial].filter(Boolean).length;
-
-  if (password.length < 8 || kinds <= 1) return "FRACA";
-  if (password.length > 8 && kinds >= 3) return "SEGURA";
-  return "MEDIA";
-}
-
-function getStrengthClass(strength: PasswordStrength) {
-  if (strength === "FRACA") return "text-red-600";
-  if (strength === "MEDIA") return "text-sky-500";
-  return "text-green-600";
-}
 
 export default function ResetPassword() {
   const [, setLocation] = useLocation();
@@ -63,7 +47,7 @@ export default function ResetPassword() {
   });
 
   const passwordValue = form.watch("newPassword");
-  const strength = useMemo(() => getPasswordStrength(passwordValue || ""), [passwordValue]);
+  const strength = useMemo(() => evaluatePasswordStrength(passwordValue || ""), [passwordValue]);
 
   async function validateAccess() {
     const identifier = form.getValues("identifier");
@@ -159,7 +143,9 @@ export default function ResetPassword() {
                 <div className="space-y-2">
                   <Label htmlFor="newPassword">Nova senha</Label>
                   <Input id="newPassword" type="password" {...form.register("newPassword")} />
-                  <p className={`text-xs font-semibold ${getStrengthClass(strength)}`}>Senha + {strength}</p>
+                  <p className={`text-xs font-semibold ${getPasswordStrengthClass(strength)}`}>
+                    Senha {getPasswordStrengthLabel(strength)}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
