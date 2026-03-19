@@ -6,6 +6,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { useCourses } from "@/hooks/use-courses";
 import { useEnrollments } from "@/hooks/use-enrollments";
+import { useTeachingAssignmentsMySchedule } from "@/hooks/use-teaching-assignment";
+import { AcademicWeeklySchedule } from "@/components/schedule/academic-weekly-schedule";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +52,7 @@ export default function Dashboard() {
   const { data: dashboard, isLoading: dashboardLoading } = useDashboard();
   const { courses } = useCourses();
   const { data: enrollments } = useEnrollments(user?.role === "student" ? { studentId: user.id } : undefined);
+  const weeklySchedule = useTeachingAssignmentsMySchedule(user?.role === "teacher" || user?.role === "student");
 
   if (!user) return null;
 
@@ -176,6 +179,44 @@ export default function Dashboard() {
           </Card>
         </motion.div>
       </motion.section>
+
+      {(user.role === "teacher" || user.role === "student") && (
+        <motion.section variants={fadeInUp}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Calendario semanal oficial</CardTitle>
+              <CardDescription>
+                Grade publicada do periodo atual, reutilizando a mesma tabela semanal academica do modulo de atribuicao.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {weeklySchedule.isLoading ? (
+                <Skeleton className="h-80 w-full rounded-2xl" />
+              ) : weeklySchedule.data && weeklySchedule.data.entries.length > 0 ? (
+                <AcademicWeeklySchedule
+                  title="Academic Weekly Schedule"
+                  subtitle={
+                    user.role === "teacher"
+                      ? `${user.name} | Grade docente publicada`
+                      : `${studentEnrollments[0]?.courseName ?? "Turma do aluno"} | Grade publicada`
+                  }
+                  semesterLabel={weeklySchedule.data.activeTerm.name}
+                  timeSlots={weeklySchedule.data.timeSlots}
+                  weekdays={weeklySchedule.data.weekdays}
+                  entries={weeklySchedule.data.entries}
+                  generatedAt={new Date().toLocaleDateString("pt-BR")}
+                  institutionLabel="Academic Suite Official Data"
+                  sheetId={`DASHBOARD-${user.id}-${weeklySchedule.data.activeTerm.code}`}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Ainda nao existe grade oficial publicada para o seu perfil neste periodo.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.section>
+      )}
     </motion.div>
   );
 }

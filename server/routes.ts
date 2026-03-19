@@ -18,6 +18,8 @@ import {
   normalizeCpf,
 } from "./password-reset";
 import { sendPasswordResetEmail } from "./notify";
+import { teacherSubjectCompatibilityService } from "./teacher-subject-compatibility";
+import { teachingAssignmentService } from "./teaching-assignment";
 
 function sanitizeUser(user: User) {
   const { password, ...safeUser } = user;
@@ -77,7 +79,7 @@ function handleRouteError(res: Response, error: unknown, internalMessage = "Erro
       return res.status(404).json({ message: error.message });
     }
 
-    if (error.message.includes("Turma") || error.message.includes("invalida")) {
+    if (error.message.includes("Turma") || error.message.includes("invalida") || error.message.includes("invalido")) {
       return res.status(400).json({ message: error.message });
     }
   }
@@ -140,6 +142,8 @@ function buildMaterialApiResponse(material: {
   authorName?: string;
   courseId: number;
   courseName?: string;
+  subjectId?: number | null;
+  subjectName?: string;
   classSectionId?: number | null;
   classSectionCode?: string;
   classSectionName?: string;
@@ -156,6 +160,8 @@ function buildMaterialApiResponse(material: {
     authorName: material.authorName,
     courseId: material.courseId,
     courseName: material.courseName,
+    subjectId: material.subjectId ?? null,
+    subjectName: material.subjectName,
     classSectionId: material.classSectionId ?? null,
     classSectionCode: material.classSectionCode,
     classSectionName: material.classSectionName,
@@ -545,6 +551,254 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.get(api.teacherSubjectCompatibility.calculate.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teacherSubjectCompatibility.calculate.input.parse(req.query);
+      const result = await teacherSubjectCompatibilityService.calculateForPair({
+        teacherId: input.teacherId,
+        subjectId: input.subjectId,
+        persist: input.persist ?? false,
+        calculatedByUserId: getAuthUser(req).id,
+      });
+
+      return res.json(result);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao calcular compatibilidade professor x materia");
+    }
+  });
+
+  app.post(api.teacherSubjectCompatibility.override.create.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teacherSubjectCompatibility.override.create.input.parse(req.body);
+      const created = await teacherSubjectCompatibilityService.createManualOverride({
+        teacherId: input.teacherId,
+        subjectId: input.subjectId,
+        action: input.action,
+        value: input.value,
+        reason: input.reason,
+        createdByUserId: getAuthUser(req).id,
+      });
+
+      return res.status(201).json(created);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao criar override manual de compatibilidade");
+    }
+  });
+
+  app.post(api.teacherSubjectCompatibility.override.revoke.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const overrideId = Number(req.params.id);
+      if (!Number.isFinite(overrideId)) {
+        return res.status(400).json({ message: "Override invalido" });
+      }
+
+      api.teacherSubjectCompatibility.override.revoke.input.parse(req.body ?? {});
+
+      const updated = await teacherSubjectCompatibilityService.revokeManualOverride({
+        overrideId,
+        revokedByUserId: getAuthUser(req).id,
+      });
+
+      return res.json(updated);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao revogar override manual de compatibilidade");
+    }
+  });
+
+  app.get(api.teachingAssignments.adminWorkspace.path, requireRoles("admin"), async (_req, res) => {
+    try {
+      const workspace = await teachingAssignmentService.getAdminWorkspace();
+      return res.json(workspace);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao carregar workspace administrativo de atribuicao");
+    }
+  });
+
+  app.get(api.teachingAssignments.teacherWorkspace.path, requireRoles("teacher"), async (req, res) => {
+    try {
+      const workspace = await teachingAssignmentService.getTeacherWorkspace(getAuthUser(req).id);
+      return res.json(workspace);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao carregar workspace do professor");
+    }
+  });
+
+  app.put(api.teachingAssignments.teacherPreferences.path, requireRoles("teacher"), async (req, res) => {
+    try {
+      const input = api.teachingAssignments.teacherPreferences.input.parse(req.body);
+      await teachingAssignmentService.upsertTeacherPreferences({
+        teacherId: getAuthUser(req).id,
+        notes: input.notes,
+        subjectIds: input.subjectIds,
+        sectionPreferences: input.sectionPreferences,
+        availability: input.availability,
+      });
+      return res.json({ message: "Preferencias salvas com sucesso" });
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao salvar preferencias do professor");
+    }
+  });
+
+  app.post(api.teachingAssignments.teacherProfile.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teachingAssignments.teacherProfile.input.parse(req.body);
+      await teachingAssignmentService.upsertTeacherAssignmentProfile(input);
+      return res.json({ message: "Perfil docente atualizado" });
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao atualizar perfil docente");
+    }
+  });
+
+  app.post(api.teachingAssignments.locationCategories.create.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teachingAssignments.locationCategories.create.input.parse(req.body);
+      const units = await teachingAssignmentService.upsertLocationCategory(input);
+      return res.status(201).json(units);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao criar categoria de local");
+    }
+  });
+
+  app.patch(api.teachingAssignments.locationCategories.update.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const categoryId = Number(req.params.id);
+      if (!Number.isFinite(categoryId)) {
+        return res.status(400).json({ message: "Categoria invalida" });
+      }
+
+      const input = api.teachingAssignments.locationCategories.update.input.parse(req.body);
+      const units = await teachingAssignmentService.upsertLocationCategory({ id: categoryId, ...input });
+      return res.json(units);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao atualizar categoria de local");
+    }
+  });
+
+  app.post(api.teachingAssignments.assignments.upsert.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teachingAssignments.assignments.upsert.input.parse(req.body);
+      const assignment = await teachingAssignmentService.upsertAssignment({
+        ...input,
+        createdByUserId: getAuthUser(req).id,
+      });
+      return res.json(assignment);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao salvar atribuicao de aula");
+    }
+  });
+
+  app.post(api.teachingAssignments.scheduleEntries.create.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teachingAssignments.scheduleEntries.create.input.parse(req.body);
+      await teachingAssignmentService.createScheduleEntry({
+        ...input,
+        createdByUserId: getAuthUser(req).id,
+      });
+      return res.status(201).json({ message: "Slot salvo com sucesso" });
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao salvar slot de horario");
+    }
+  });
+
+  app.delete(api.teachingAssignments.scheduleEntries.remove.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const entryId = Number(req.params.id);
+      if (!Number.isFinite(entryId)) {
+        return res.status(400).json({ message: "Slot invalido" });
+      }
+
+      await teachingAssignmentService.deleteScheduleEntry(entryId);
+      return res.json({ message: "Slot removido com sucesso" });
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao remover slot");
+    }
+  });
+
+  app.post(api.teachingAssignments.validate.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const validation = await teachingAssignmentService.validateDraftSchedule(getAuthUser(req).id);
+      return res.json(validation);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao validar grade horaria");
+    }
+  });
+
+  app.post(api.teachingAssignments.publish.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teachingAssignments.publish.input.parse(req.body);
+      await teachingAssignmentService.publishDraftSchedule({
+        notes: input.notes,
+        publishedByUserId: getAuthUser(req).id,
+      });
+      return res.json({ message: "Horarios publicados com sucesso" });
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao publicar horarios");
+    }
+  });
+
+  app.get(api.teachingAssignments.mySchedule.path, requireRoles("teacher", "student"), async (req, res) => {
+    try {
+      const schedule = await teachingAssignmentService.getScheduleForUser(getAuthUser(req));
+      return res.json(schedule);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao carregar calendario semanal");
+    }
+  });
+
+  app.post(api.teachingAssignments.aiAssist.path, requireRoles("admin"), async (req, res) => {
+    try {
+      const input = api.teachingAssignments.aiAssist.input.parse(req.body);
+      const suggestions = await teachingAssignmentService.getOptionalAiEligibilitySuggestions({
+        teacherId: input.teacherId,
+        requestedByUserId: getAuthUser(req).id,
+      });
+      return res.json(suggestions);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao consultar sugestoes assistivas");
+    }
+  });
+
+  app.get(api.academicRecords.list.path, requireRoles("admin", "teacher"), async (req, res) => {
+    try {
+      const classSectionId = Number(req.params.classSectionId);
+      const subjectId = Number(req.params.subjectId);
+      if (!Number.isFinite(classSectionId) || !Number.isFinite(subjectId)) {
+        return res.status(400).json({ message: "Parametros invalidos" });
+      }
+
+      const sheet = await teachingAssignmentService.listAcademicRecords(classSectionId, subjectId, getAuthUser(req));
+      return res.json(sheet);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao carregar diario da disciplina");
+    }
+  });
+
+  app.put(api.academicRecords.upsert.path, requireRoles("admin", "teacher"), async (req, res) => {
+    try {
+      const classSectionId = Number(req.params.classSectionId);
+      const subjectId = Number(req.params.subjectId);
+      const studentId = Number(req.params.studentId);
+      if (!Number.isFinite(classSectionId) || !Number.isFinite(subjectId) || !Number.isFinite(studentId)) {
+        return res.status(400).json({ message: "Parametros invalidos" });
+      }
+
+      const input = api.academicRecords.upsert.input.parse(req.body);
+      const user = getAuthUser(req);
+      const sheet = await teachingAssignmentService.upsertAcademicRecord({
+        requesterId: user.id,
+        requesterRole: user.role,
+        classSectionId,
+        subjectId,
+        studentId,
+        grade: input.grade,
+        absences: input.absences,
+      });
+      return res.json(sheet);
+    } catch (error) {
+      return handleRouteError(res, error, "Erro ao salvar diario da disciplina");
+    }
+  });
+
   app.get(api.courses.subjects.list.path, requireAuth, async (req, res) => {
     const courseId = Number(req.params.id);
     if (!Number.isFinite(courseId)) {
@@ -634,31 +888,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  app.patch(api.enrollments.update.path, requireRoles("teacher"), async (req, res) => {
+  app.patch(api.enrollments.update.path, requireRoles("admin"), async (req, res) => {
     try {
       const enrollmentId = Number(req.params.id);
       if (!Number.isFinite(enrollmentId)) {
         return res.status(400).json({ message: "Matricula invalida" });
       }
 
-      const user = getAuthUser(req);
       const existingEnrollment = await storage.getEnrollmentById(enrollmentId);
       if (!existingEnrollment) {
         return res.status(404).json({ message: "Matricula nao encontrada" });
       }
 
-      if (user.role === "teacher") {
-        const hasCourseAccess = await canTeacherManageCourse(user.id, existingEnrollment.courseId);
-        const hasSectionAccess = existingEnrollment.classSectionId
-          ? await canTeacherManageClassSection(user.id, existingEnrollment.classSectionId)
-          : true;
-
-        if (!hasCourseAccess || !hasSectionAccess) {
-          return res.status(403).json({ message: "Professor nao possui acesso para editar esta matricula" });
-        }
-      }
-
       const input = api.enrollments.update.input.parse(req.body);
+      const user = getAuthUser(req);
       const enrollment = await storage.updateEnrollment(
         enrollmentId,
         input,
@@ -795,7 +1038,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     async (req, res) => {
       try {
         const user = getAuthUser(req);
-        const input = api.materials.upload.input.parse(req.body);
+        const input = api.materials.upload.input.parse({
+          subjectId: req.body.subjectId,
+          classSectionIds: Array.isArray(req.body.classSectionIds)
+            ? req.body.classSectionIds
+            : req.body.classSectionIds
+              ? [req.body.classSectionIds]
+              : [],
+          issuedAt: req.body.issuedAt,
+        });
         const file = req.file;
 
         if (!file) {
@@ -809,20 +1060,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           return res.status(400).json({ message: "Tipo de arquivo nao permitido" });
         }
 
-        const canManageSection = await canTeacherManageClassSection(user.id, input.classSectionId);
-        if (!canManageSection) {
-          return res.status(403).json({ message: "Professor nao possui acesso para enviar arquivo nesta turma" });
-        }
-
-        const allowedSections = await storage.getClassSectionsForUser(user);
-        const selectedSection = allowedSections.find((section) => section.id === input.classSectionId);
-        const allowedCourses = await storage.getCoursesForUser(user);
-        const selectedCourse = allowedCourses.find((course) => course.id === selectedSection?.courseId);
-
-        if (!selectedSection) {
-          return res.status(403).json({ message: "Turma invalida para upload" });
-        }
-
         await fs.mkdir(MATERIAL_STORAGE_DIR, { recursive: true });
 
         const internalName = `${Date.now()}-${randomUUID()}${fileExtension}`;
@@ -830,28 +1067,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const absolutePath = path.join(MATERIAL_STORAGE_DIR, internalName);
         await fs.writeFile(absolutePath, file.buffer);
 
-        const createdMaterial = await storage.createMaterial({
-          originalName,
-          internalName,
-          storagePath,
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
-          authorId: user.id,
-          courseId: selectedSection.courseId,
-          classSectionId: selectedSection.id,
+        const createdMaterials = await teachingAssignmentService.createMaterialBatch({
+          requesterId: user.id,
+          subjectId: input.subjectId,
+          classSectionIds: input.classSectionIds,
+          file: {
+            originalName,
+            internalName,
+            storagePath,
+            mimeType: file.mimetype,
+            sizeBytes: file.size,
+          },
           issuedAt: input.issuedAt ? new Date(input.issuedAt) : new Date(),
         });
 
-        const response = buildMaterialApiResponse({
-          ...createdMaterial,
-          authorName: user.name,
-          courseName: selectedCourse?.name,
-          classSectionCode: selectedSection.code,
-          classSectionName: selectedSection.name,
-          isPinned: false,
-        });
+        const materials = await storage.getMaterialsForUser(user);
+        const responseMaterials = materials
+          .filter((material) => createdMaterials.some((created) => created.id === material.id))
+          .map((material) => buildMaterialApiResponse(material));
 
-        return res.status(201).json(response);
+        return res.status(201).json({
+          createdCount: responseMaterials.length,
+          materials: responseMaterials,
+        });
       } catch (error) {
         if (error instanceof multer.MulterError) {
           if (error.code === "LIMIT_FILE_SIZE") {

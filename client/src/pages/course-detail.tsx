@@ -9,7 +9,7 @@ import {
   useSubjects,
   useUpdateCourseSubjects,
 } from "@/hooks/use-courses";
-import { useEnrollments, useUpdateEnrollment } from "@/hooks/use-enrollments";
+import { useEnrollments } from "@/hooks/use-enrollments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,7 +43,6 @@ export default function CourseDetail() {
   const { data: allSubjects } = useSubjects();
   const { data: selectedSubjects } = useCourseSubjects(courseId);
   const updateCourseSubjects = useUpdateCourseSubjects(courseId);
-  const updateEnrollment = useUpdateEnrollment();
   const createSubject = useCreateSubject();
 
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<number[]>([]);
@@ -63,7 +62,7 @@ export default function CourseDetail() {
     setSelectedSubjectIds(selectedSubjects.map((subject) => subject.id));
   }, [selectedSubjects]);
 
-  const canEditGrades = user?.role === "teacher";
+  const canEditGrades = false;
   const canEditCurriculum = user?.role === "admin";
   const canViewStudentsList = user?.role === "teacher" || user?.role === "admin";
 
@@ -93,14 +92,6 @@ export default function CourseDetail() {
 
   function saveCurriculum() {
     updateCourseSubjects.mutate(selectedSubjectIds);
-  }
-
-  function handleGradeUpdate(id: number, grade?: number, attendance?: number) {
-    updateEnrollment.mutate({
-      id,
-      grade,
-      attendance,
-    });
   }
 
   function onCreateSubject(data: SubjectForm) {
@@ -160,6 +151,11 @@ export default function CourseDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Alunos e desempenho</CardTitle>
+              {user?.role === "teacher" && (
+                <p className="text-sm text-muted-foreground">
+                  O lancamento operacional oficial de notas e faltas agora ocorre na aba Atribuicao de Aulas, por turma e materia publicada.
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               {enrollmentsLoading ? (
@@ -186,42 +182,10 @@ export default function CourseDetail() {
                           {item.enrolledAt ? new Date(item.enrolledAt).toLocaleDateString("pt-BR") : "-"}
                         </TableCell>
                         <TableCell>
-                          {canEditGrades ? (
-                            <Input
-                              type="number"
-                              className="w-24 h-8"
-                              min={0}
-                              max={500}
-                              step={1}
-                              defaultValue={item.attendance ?? 0}
-                              onBlur={(event) => {
-                                const attendance = Number(event.target.value);
-                                if (Number.isNaN(attendance)) return;
-                                handleGradeUpdate(item.id, item.grade ?? undefined, attendance);
-                              }}
-                            />
-                          ) : (
-                            <Badge variant="outline">{item.attendance ?? 0}</Badge>
-                          )}
+                          <Badge variant="outline">{item.attendance ?? 0}</Badge>
                         </TableCell>
                         <TableCell>
-                          {canEditGrades ? (
-                            <Input
-                              type="number"
-                              className="w-24 h-8"
-                              min={0}
-                              max={10}
-                              step={0.1}
-                              defaultValue={item.grade ?? ""}
-                              onBlur={(event) => {
-                                const grade = Number(event.target.value);
-                                if (Number.isNaN(grade)) return;
-                                handleGradeUpdate(item.id, grade, item.attendance ?? undefined);
-                              }}
-                            />
-                          ) : (
-                            <span className="font-semibold">{item.grade ?? "-"}</span>
-                          )}
+                          <span className="font-semibold">{item.grade ?? "-"}</span>
                         </TableCell>
                       </TableRow>
                     ))}

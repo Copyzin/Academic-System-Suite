@@ -41,6 +41,7 @@ import {
   type User,
 } from "@shared/schema";
 import { db } from "./db";
+import { teachingAssignmentService } from "./teaching-assignment";
 
 function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
@@ -624,6 +625,10 @@ export class DatabaseStorage implements IStorage {
         code: subjects.code,
         name: subjects.name,
         description: subjects.description,
+        area: subjects.area,
+        subarea: subjects.subarea,
+        requiredLocationKind: subjects.requiredLocationKind,
+        requiredEquipment: subjects.requiredEquipment,
         workloadHours: subjects.workloadHours,
         createdAt: subjects.createdAt,
       })
@@ -1269,6 +1274,14 @@ export class DatabaseStorage implements IStorage {
     if (allowedCourseIds.length === 0) return [];
 
     const allowedSectionIds = new Set(await this.getAllowedClassSectionIdsForUser(user));
+    const allowedTeacherPairs =
+      user.role === "teacher"
+        ? new Set(
+            (await teachingAssignmentService.getTeacherClassSectionSubjectPairs(user.id)).map(
+              (item) => `${item.classSectionId}:${item.subjectId}`,
+            ),
+          )
+        : null;
 
     const rows = await db
       .select({
@@ -1280,11 +1293,13 @@ export class DatabaseStorage implements IStorage {
         sizeBytes: courseMaterials.sizeBytes,
         authorId: courseMaterials.authorId,
         courseId: courseMaterials.courseId,
+        subjectId: courseMaterials.subjectId,
         classSectionId: courseMaterials.classSectionId,
         issuedAt: courseMaterials.issuedAt,
         createdAt: courseMaterials.createdAt,
         authorName: users.name,
         courseName: courses.name,
+        subjectName: subjects.name,
         classSectionCode: classSections.code,
         classSectionName: classSections.name,
         isPinned: sql<boolean>`${userPinnedMaterials.id} IS NOT NULL`,
@@ -1292,6 +1307,7 @@ export class DatabaseStorage implements IStorage {
       .from(courseMaterials)
       .innerJoin(users, eq(users.id, courseMaterials.authorId))
       .innerJoin(courses, eq(courses.id, courseMaterials.courseId))
+      .leftJoin(subjects, eq(subjects.id, courseMaterials.subjectId))
       .leftJoin(classSections, eq(classSections.id, courseMaterials.classSectionId))
       .leftJoin(
         userPinnedMaterials,
@@ -1304,7 +1320,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(courseMaterials.issuedAt), desc(courseMaterials.createdAt));
 
     return rows
-      .filter((row) => this.canAccessClassSectionForRole(user, row.classSectionId ?? null, allowedSectionIds))
+      .filter((row) => {
+        if (user.role === "teacher") {
+          if (!row.classSectionId || !row.subjectId) return false;
+          return allowedTeacherPairs?.has(`${row.classSectionId}:${row.subjectId}`) ?? false;
+        }
+
+        return this.canAccessClassSectionForRole(user, row.classSectionId ?? null, allowedSectionIds);
+      })
       .map((row) => ({
         id: row.id,
         originalName: row.originalName,
@@ -1314,11 +1337,13 @@ export class DatabaseStorage implements IStorage {
         sizeBytes: row.sizeBytes,
         authorId: row.authorId,
         courseId: row.courseId,
+        subjectId: row.subjectId,
         classSectionId: row.classSectionId,
         issuedAt: row.issuedAt,
         createdAt: row.createdAt,
         authorName: row.authorName ?? undefined,
         courseName: row.courseName ?? undefined,
+        subjectName: row.subjectName ?? undefined,
         classSectionCode: row.classSectionCode ?? undefined,
         classSectionName: row.classSectionName ?? undefined,
         isPinned: Boolean(row.isPinned),
@@ -1331,6 +1356,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async canUserAccessMaterial(user: User, material: CourseMaterial): Promise<boolean> {
+    if (user.role === "teacher" && material.classSectionId && material.subjectId) {
+      return teachingAssignmentService.teacherHasOperationalAssignment(
+        user.id,
+        material.classSectionId,
+        material.subjectId,
+      );
+    }
+
     const [allowedCourseIds, allowedSectionIds] = await Promise.all([
       this.getAllowedCourseIdsForUser(user),
       this.getAllowedClassSectionIdsForUser(user),

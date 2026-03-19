@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, GripVertical, Paperclip, Pin, Upload } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMaterials, usePinMaterial, useUnpinMaterial, useUploadMaterial } from "@/hooks/use-materials";
-import { useStudentScope } from "@/hooks/use-students";
+import { useTeachingAssignmentsTeacherWorkspace } from "@/hooks/use-teaching-assignment";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ export default function Downloads() {
   const { toast } = useToast();
 
   const { data: materials, isLoading } = useMaterials();
-  const { data: teacherScope } = useStudentScope(user?.role === "teacher");
+  const teacherWorkspace = useTeachingAssignmentsTeacherWorkspace(user?.role === "teacher");
 
   const uploadMaterial = useUploadMaterial();
   const pinMaterial = usePinMaterial();
@@ -27,7 +27,8 @@ export default function Downloads() {
   const [hasManualOrder, setHasManualOrder] = useState(false);
   const [draggingMaterialId, setDraggingMaterialId] = useState<number | null>(null);
 
-  const [uploadClassSectionId, setUploadClassSectionId] = useState<string>("");
+  const [uploadSubjectId, setUploadSubjectId] = useState<string>("");
+  const [uploadClassSectionIds, setUploadClassSectionIds] = useState<number[]>([]);
   const [uploadIssuedAt, setUploadIssuedAt] = useState<string>("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
 
@@ -86,7 +87,53 @@ export default function Downloads() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [materialList]);
 
-  const availableSections = teacherScope?.classSections ?? [];
+  const teacherUploadOptions = useMemo(() => {
+    const entries = teacherWorkspace.data?.publishedEntries ?? [];
+    const byKey = new Map<
+      string,
+      {
+        subjectId: number;
+        subjectName: string;
+        classSectionId: number;
+        classSectionName: string;
+        classSectionCode: string;
+        courseName: string;
+      }
+    >();
+
+    for (const entry of entries) {
+      const key = `${entry.subjectId}:${entry.classSectionId}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          subjectId: entry.subjectId,
+          subjectName: entry.subjectName,
+          classSectionId: entry.classSectionId,
+          classSectionName: entry.classSectionName,
+          classSectionCode: entry.classSectionCode,
+          courseName: entry.courseName,
+        });
+      }
+    }
+
+    return Array.from(byKey.values()).sort((left, right) => {
+      const subjectDiff = left.subjectName.localeCompare(right.subjectName);
+      if (subjectDiff !== 0) return subjectDiff;
+      return left.classSectionCode.localeCompare(right.classSectionCode);
+    });
+  }, [teacherWorkspace.data]);
+
+  const availableSubjects = useMemo(() => {
+    const byId = new Map<number, string>();
+    for (const item of teacherUploadOptions) {
+      byId.set(item.subjectId, item.subjectName);
+    }
+    return Array.from(byId.entries()).map(([id, name]) => ({ id, name }));
+  }, [teacherUploadOptions]);
+
+  const availableSections = useMemo(() => {
+    if (!uploadSubjectId) return [];
+    return teacherUploadOptions.filter((item) => item.subjectId === Number(uploadSubjectId));
+  }, [teacherUploadOptions, uploadSubjectId]);
 
   if (!user) return null;
 
@@ -153,21 +200,28 @@ export default function Downloads() {
       return;
     }
 
-    if (!uploadClassSectionId) {
-      toast({ title: "Turma obrigatoria", description: "Selecione a turma de destino.", variant: "destructive" });
+    if (!uploadSubjectId) {
+      toast({ title: "Materia obrigatoria", description: "Selecione a materia oficial de destino.", variant: "destructive" });
+      return;
+    }
+
+    if (uploadClassSectionIds.length === 0) {
+      toast({ title: "Turma obrigatoria", description: "Selecione ao menos uma turma oficial.", variant: "destructive" });
       return;
     }
 
     uploadMaterial.mutate(
       {
         file: uploadFile,
-        classSectionId: Number(uploadClassSectionId),
+        subjectId: Number(uploadSubjectId),
+        classSectionIds: uploadClassSectionIds,
         issuedAt: uploadIssuedAt || undefined,
       },
       {
         onSuccess: () => {
           setUploadFile(null);
-          setUploadClassSectionId("");
+          setUploadSubjectId("");
+          setUploadClassSectionIds([]);
           setUploadIssuedAt("");
         },
       },
@@ -187,7 +241,7 @@ export default function Downloads() {
         <Card>
           <CardHeader>
             <CardTitle>Enviar material</CardTitle>
-            <CardDescription>Upload real para turmas sob sua responsabilidade.</CardDescription>
+            <CardDescription>Upload real apenas para turma e materia com atribuicao oficial publicada.</CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="space-y-2 md:col-span-2">
@@ -201,17 +255,20 @@ export default function Downloads() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="upload-section">Turma</Label>
+              <Label htmlFor="upload-subject">Materia</Label>
               <select
-                id="upload-section"
-                value={uploadClassSectionId}
-                onChange={(event) => setUploadClassSectionId(event.target.value)}
+                id="upload-subject"
+                value={uploadSubjectId}
+                onChange={(event) => {
+                  setUploadSubjectId(event.target.value);
+                  setUploadClassSectionIds([]);
+                }}
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">Selecione</option>
-                {availableSections.map((section) => (
-                  <option key={section.id} value={section.id}>
-                    {section.code} - {section.name}
+                {availableSubjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
                   </option>
                 ))}
               </select>
@@ -225,6 +282,47 @@ export default function Downloads() {
                 value={uploadIssuedAt}
                 onChange={(event) => setUploadIssuedAt(event.target.value)}
               />
+            </div>
+
+            <div className="space-y-2 md:col-span-4">
+              <Label>Turmas oficiais</Label>
+              {!uploadSubjectId ? (
+                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  Escolha a materia primeiro para listar somente as turmas oficialmente publicadas.
+                </div>
+              ) : availableSections.length === 0 ? (
+                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  Nenhuma turma publicada encontrada para esta materia.
+                </div>
+              ) : (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {availableSections.map((section) => {
+                    const checked = uploadClassSectionIds.includes(section.classSectionId);
+                    return (
+                      <label key={section.classSectionId} className="flex items-start gap-3 rounded-lg border p-3 bg-white">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) =>
+                            setUploadClassSectionIds((current) =>
+                              event.target.checked
+                                ? [...current, section.classSectionId]
+                                : current.filter((id) => id !== section.classSectionId),
+                            )
+                          }
+                          className="mt-1"
+                        />
+                        <div className="text-sm">
+                          <p className="font-medium">
+                            {section.classSectionCode} - {section.classSectionName}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{section.courseName}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="md:col-span-4">
@@ -308,6 +406,7 @@ export default function Downloads() {
                       <p className="font-medium truncate">{material.originalName}</p>
                       <p className="text-xs text-muted-foreground truncate">
                         {material.courseName || `Curso ${material.courseId}`}
+                        {material.subjectName ? ` | ${material.subjectName}` : ""}
                         {material.classSectionName ? ` | ${material.classSectionName}` : ""}
                         {` | Emitido em ${new Date(material.issuedAt).toLocaleDateString("pt-BR")}`}
                         {` | ${(material.sizeBytes / 1024 / 1024).toFixed(2)} MB`}

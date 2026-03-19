@@ -13,6 +13,7 @@ import {
   Lock,
   LogOut,
   Settings,
+  Table2,
   Users,
 } from "lucide-react";
 
@@ -121,6 +122,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
     { label: "Comunicados", href: "/announcements", icon: Bell, roles: ["admin", "teacher", "student"] },
     { label: "Financeiro", href: "/finances", icon: CircleDollarSign, roles: ["admin", "student"] },
     { label: "Downloads", href: "/downloads", icon: Download, roles: ["teacher", "student"] },
+    { label: "Atribuicao de Aulas", href: "/teaching-assignment", icon: Table2, roles: ["admin", "teacher"] },
   ];
 
   const filteredNav = navItems.filter((item) => item.roles.includes(user.role));

@@ -23,10 +23,13 @@ export function useUploadMaterial() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (input: { file: File; classSectionId: number; issuedAt?: string }) => {
+    mutationFn: async (input: { file: File; subjectId: number; classSectionIds: number[]; issuedAt?: string }) => {
       const formData = new FormData();
       formData.append("file", input.file);
-      formData.append("classSectionId", String(input.classSectionId));
+      formData.append("subjectId", String(input.subjectId));
+      for (const classSectionId of input.classSectionIds) {
+        formData.append("classSectionIds", String(classSectionId));
+      }
       if (input.issuedAt) {
         formData.append("issuedAt", new Date(input.issuedAt).toISOString());
       }

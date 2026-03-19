@@ -23,6 +23,7 @@ const Students = lazy(() => import("@/pages/students"));
 const Announcements = lazy(() => import("@/pages/announcements"));
 const Finances = lazy(() => import("@/pages/finances"));
 const Downloads = lazy(() => import("@/pages/downloads"));
+const TeachingAssignment = lazy(() => import("@/pages/teaching-assignment"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const AUTH_FLOW_PATHS = new Set(["/login", "/forgot-password", "/reset-password"]);
@@ -298,6 +299,10 @@ function Router() {
           <Route
             path="/downloads"
             component={() => <ProtectedRoute component={Downloads} allowedRoles={["teacher", "student"]} />}
+          />
+          <Route
+            path="/teaching-assignment"
+            component={() => <ProtectedRoute component={TeachingAssignment} allowedRoles={["admin", "teacher"]} />}
           />
 
           {/* Fallback final com tratamento especial para usuario autenticado. */}
